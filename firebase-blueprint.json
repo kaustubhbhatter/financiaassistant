@@ -1,0 +1,86 @@
+{
+  "entities": {
+    "AppState": {
+      "title": "Application State",
+      "description": "The entire application state for a user.",
+      "type": "object",
+      "properties": {
+        "transactions": {
+          "type": "array",
+          "items": { "$ref": "#/entities/Transaction" }
+        },
+        "accounts": {
+          "type": "array",
+          "items": { "$ref": "#/entities/Account" }
+        },
+        "groups": {
+          "type": "array",
+          "items": { "$ref": "#/entities/Group" }
+        },
+        "categories": {
+          "type": "array",
+          "items": { "$ref": "#/entities/Category" }
+        }
+      }
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "A financial transaction.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "amount": { "type": "number" },
+        "type": { "type": "string", "enum": ["income", "expense", "transfer"] },
+        "categoryId": { "type": "string" },
+        "accountId": { "type": "string" },
+        "date": { "type": "string" },
+        "note": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "amount", "type", "accountId", "date", "createdAt"]
+    },
+    "Account": {
+      "title": "Account",
+      "description": "A financial account.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "groupId": { "type": "string" },
+        "initialBalance": { "type": "number" },
+        "excludeFromTotals": { "type": "boolean" },
+        "color": { "type": "string" }
+      },
+      "required": ["id", "name", "groupId", "initialBalance"]
+    },
+    "Group": {
+      "title": "Group",
+      "description": "A group of accounts.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["bank", "credit", "cash", "investment", "other"] }
+      },
+      "required": ["id", "name", "type"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "A transaction category.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["income", "expense"] },
+        "color": { "type": "string" }
+      },
+      "required": ["id", "name", "type"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "AppState",
+      "description": "Stores the user's finance data."
+    }
+  }
+}

@@ -1,7 +1,10 @@
-import React, { createContext, useContext, useReducer, useEffect } from "react";
+import React, { createContext, useContext, useReducer, useEffect, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { AppState, Transaction, Account, Group, Category } from "@/types";
 import { useAuth } from "@/context/AuthContext";
+import { db } from "@/lib/firebase";
+import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import { User } from "firebase/auth";
 
 const initialState: AppState = {
   transactions: [],
@@ -110,60 +113,15 @@ const FinanceContext = createContext<{
   deleteCategory: (id: string) => void;
 } | null>(null);
 
-const DEFAULT_STORAGE_KEY = "nebula_finance_data_v1";
+const GUEST_STORAGE_KEY = "nebula_finance_guest_data";
 
 export function FinanceProvider({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const [state, dispatch] = useReducer(reducer, initialState);
+  const prevUser = useRef<User | null | undefined>(undefined);
+  const isRemoteUpdate = useRef(false);
 
-  // Determine storage key based on user
-  const storageKey = user ? `nebula_finance_data_${user.uid}` : DEFAULT_STORAGE_KEY;
-
-  // Load from local storage on mount or when user changes
-  useEffect(() => {
-    if (loading) return;
-
-    const storedData = localStorage.getItem(storageKey);
-    if (storedData) {
-      try {
-        const parsedData = JSON.parse(storedData);
-        dispatch({ type: "LOAD_STATE", payload: parsedData });
-      } catch (e) {
-        console.error("Failed to parse stored data", e);
-        // If parsing fails, maybe seed initial data?
-        // For now, let's just seed if it's the default key or empty
-        if (!user) seedInitialData();
-      }
-    } else {
-      // Seed initial data if empty
-      seedInitialData();
-    }
-  }, [user, loading, storageKey]);
-
-  // Save to local storage on change
-  useEffect(() => {
-    if (loading) return;
-    
-    // Only save if state is not empty (to avoid overwriting with initial empty state before load)
-    // Actually, we load first, so state should be correct.
-    // But we need to be careful not to save the *previous* user's state to the *new* user's key
-    // before the new user's data is loaded.
-    // The load effect runs when storageKey changes.
-    // This save effect runs when state changes.
-    // If storageKey changes, load effect runs.
-    // We need to ensure we don't save 'initialState' to the new key before loading.
-    
-    // A simple way is to check if we have loaded data. 
-    // But reducer initializes with initialState.
-    
-    // Let's rely on the fact that the load effect will dispatch LOAD_STATE, which triggers this effect.
-    // But we should probably check if we are in a stable state.
-    
-    if (state !== initialState) {
-      localStorage.setItem(storageKey, JSON.stringify(state));
-    }
-  }, [state, storageKey, loading]);
-
+  // Seed initial data for guests
   const seedInitialData = () => {
     const bankGroup = { id: uuidv4(), name: "Bank Accounts", type: "bank" as const };
     const creditGroup = { id: uuidv4(), name: "Credit Cards", type: "credit" as const };
@@ -291,6 +249,89 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       },
     });
   };
+
+  // Load / Sync Data
+  useEffect(() => {
+    if (loading) return;
+
+    let unsubscribe = () => {};
+
+    if (user) {
+      // LOGGED IN
+      
+      // Clear guest data if we just logged in
+      localStorage.removeItem(GUEST_STORAGE_KEY);
+
+      if (db) {
+        const userDocRef = doc(db, "users", user.uid);
+        unsubscribe = onSnapshot(userDocRef, (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data() as AppState;
+            isRemoteUpdate.current = true;
+            dispatch({ type: "LOAD_STATE", payload: data });
+          } else {
+             // No data for user yet. Reset to empty state.
+             dispatch({ type: "RESET_STATE" });
+          }
+        });
+      }
+    } else {
+      // GUEST
+      
+      // Check if we just logged out
+      if (prevUser.current) {
+        // We were logged in, now logged out.
+        // Clear storage and seed defaults.
+        localStorage.removeItem(GUEST_STORAGE_KEY);
+        seedInitialData();
+      } else {
+        // We were already guest (or first load)
+        const storedData = localStorage.getItem(GUEST_STORAGE_KEY);
+        if (storedData) {
+          try {
+            const parsedData = JSON.parse(storedData);
+            dispatch({ type: "LOAD_STATE", payload: parsedData });
+          } catch (e) {
+            console.error("Failed to parse stored data", e);
+            seedInitialData();
+          }
+        } else {
+          // First load as guest
+          seedInitialData();
+        }
+      }
+    }
+
+    prevUser.current = user;
+
+    return () => unsubscribe();
+  }, [user, loading]);
+
+  // Save Data
+  useEffect(() => {
+    if (loading) return;
+    
+    // Skip if this update came from remote
+    if (isRemoteUpdate.current) {
+      isRemoteUpdate.current = false;
+      return;
+    }
+
+    if (user) {
+      // Save to Firestore
+      if (db) {
+        const userDocRef = doc(db, "users", user.uid);
+        setDoc(userDocRef, state).catch(console.error);
+      }
+    } else {
+      // Save to Local Storage (Guest)
+      // Only save if we have data (don't save empty state over valid data if something went wrong)
+      // But reducer initializes empty.
+      // seedInitialData populates it.
+      // So state should be valid.
+      localStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(state));
+    }
+  }, [state, user, loading]);
 
   const addTransaction = (transaction: Omit<Transaction, "id" | "createdAt">) => {
     dispatch({

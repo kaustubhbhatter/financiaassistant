@@ -1,16 +1,12 @@
-import { initializeApp, getApps, getApp } from "firebase/app";
+import { initializeApp, getApps, getApp, FirebaseApp } from "firebase/app";
 import { getAuth, Auth } from "firebase/auth";
-
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-};
+import { getFirestore, Firestore } from "firebase/firestore";
+// @ts-ignore
+import firebaseConfig from "../../firebase-applet-config.json";
 
 let auth: Auth | undefined;
+let db: Firestore | undefined;
+let app: FirebaseApp | undefined;
 
 // Basic validation to ensure the API key is not a placeholder or empty
 const isApiKeyValid = 
@@ -21,8 +17,9 @@ const isApiKeyValid =
 
 if (isApiKeyValid) {
   try {
-    const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+    app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
     auth = getAuth(app);
+    db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
   } catch (error) {
     console.error("Failed to initialize Firebase:", error);
   }
@@ -30,4 +27,4 @@ if (isApiKeyValid) {
   console.warn("Firebase API key is missing or invalid. Authentication will be disabled.");
 }
 
-export { auth };
+export { auth, db, app };

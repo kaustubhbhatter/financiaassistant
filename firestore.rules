@@ -1,0 +1,49 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Validate AppState structure
+    function isValidAppState() {
+      let data = request.resource.data;
+      
+      // Check required keys
+      let hasKeys = data.keys().hasAll(['transactions', 'accounts', 'groups', 'categories']);
+      
+      // Check types and limits
+      // Note: We access fields only after checking hasKeys, but rules evaluation order isn't guaranteed to prevent access if we just AND them.
+      // However, if the key is missing, `data.transactions` would be undefined/error?
+      // Actually, `data.get('transactions', null)` is safer?
+      // But let's assume `hasAll` is checked.
+      // To be safe, we can use `data.get('transactions', [])` but `get` returns value.
+      
+      // Let's rely on standard practice. If `hasAll` is false, the expression should fail.
+      // But to be safe against runtime errors in rules:
+      
+      return hasKeys && 
+             data.transactions is list && data.transactions.size() < 2000 &&
+             data.accounts is list && data.accounts.size() < 50 &&
+             data.groups is list && data.groups.size() < 20 &&
+             data.categories is list && data.categories.size() < 100;
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      // Allow create/update only if owner and valid structure
+      allow create: if isOwner(userId) && isValidAppState();
+      allow update: if isOwner(userId) && isValidAppState();
+      allow delete: if isOwner(userId);
+    }
+  }
+}
